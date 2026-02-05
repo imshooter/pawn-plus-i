@@ -4,7 +4,11 @@
 #define _item_included
 
 #include <pp-hooks>
-#include <uuid>
+#include <Randomix>
+
+#if !defined UUID_LENGTH
+    #define UUID_LENGTH (37)
+#endif
 
 #define MAX_ITEMS (Item:100000)
 #define MAX_ITEM_BUILDS (ItemBuild:100000)
@@ -17,9 +21,11 @@
 #define MAX_ITEM_EXTRA_DATA (64)
 
 #define INVALID_ITEM_ID (Item:-1)
-#define INVALID_ITEM_BUILD (ItemBuild:-1)
+#define INVALID_ITEM_BUILD_ID (ItemBuild:-1)
 
 static enum _:E_ITEM_DATA {
+    ItemBuild:E_ITEM_BUILD_ID,
+
     Float:E_ITEM_X,
     Float:E_ITEM_Y,
     Float:E_ITEM_Z,
@@ -31,9 +37,6 @@ static enum _:E_ITEM_DATA {
 
     Button:E_ITEM_BUTTON_ID,
     STREAMER_TAG_OBJECT:E_ITEM_OBJECT_ID,
-
-    String:E_ITEM_UUID,
-    String:E_ITEM_EXTRA_NAME,
 
     // Items Extra Data Collection
     Map:E_ITEM_EXTRA_DATA_MAP
@@ -48,13 +51,11 @@ static Pool:allItemsCollection;
  * @Functions
  */
 
-forward Item:CreateItem(ItemBuild:buildid, const UUID[] = "", bool:call = true);
+forward Item:CreateItem(ItemBuild:buildid, const UUID[UUID_LENGTH] = "", bool:call = true);
 forward bool:DestroyItem(Item:itemid, bool:call = true);
 forward bool:IsValidItem(Item:itemid);
 forward ItemBuild:GetItemBuild(Item:itemid);
-forward bool:SetItemExtraName(Item:itemid, const name[]);
-forward bool:GetItemExtraName(Item:itemid, output[], size = sizeof (output));
-forward bool:GetItemUUID(Item:itemid, output[], size = sizeof (output));
+forward String:GetItemUUID_s(Item:itemid);
 forward bool:HasItemAnyExtraData(Item:itemid);
 forward bool:HasItemExtraData(Item:itemid, const key[]);
 forward bool:SetItemExtraData(Item:itemid, const key[], value);
@@ -65,16 +66,20 @@ forward Pool:GetItemPool();
  * @External
  */
 
-stock Item:CreateItem(ItemBuild:buildid, const UUID[] = "", bool:call = true) {
+stock Item:CreateItem(ItemBuild:buildid, const UUID[UUID_LENGTH] = "", bool:call = true) {
     if (pool_size(allItemsCollection) >= _:MAX_ITEMS) {
         return INVALID_ITEM_ID;
     }
 
-    new const Item:index = Item:pool_add(allItemsCollection, buildid);
+    new buffer[UUID_LENGTH];
+    if (UUID[0] == EOS) {
+        RandUUID(buffer);
+    } else {
+        strcat(buffer, UUID);
+    }
 
-    item[index][E_ITEM_UUID] = (UUID[0] == EOS)
-        ? str_acquire(UUID_s())
-        : str_acquire(str_new(UUID));
+    new const Item:index = Item:pool_add_str(allItemsCollection, buffer);
+    item[index][E_ITEM_BUILD_ID] = buildid;
 
     if (call) {
         CallLocalFunction("OnItemCreate", "i", _:index);
@@ -88,15 +93,14 @@ stock bool:DestroyItem(Item:itemid, bool:call = true) {
         return false;
     }
 
-    if (str_valid(item[itemid][E_ITEM_UUID])) str_delete(item[itemid][E_ITEM_UUID]);
-    if (str_valid(item[itemid][E_ITEM_EXTRA_NAME])) str_delete(item[itemid][E_ITEM_EXTRA_NAME]);
-    if (map_valid(item[itemid][E_ITEM_EXTRA_DATA_MAP])) map_delete(item[itemid][E_ITEM_EXTRA_DATA_MAP]);
-
-    item[itemid][E_ITEM_UUID] = STRING_NULL;
-    item[itemid][E_ITEM_EXTRA_NAME] = STRING_NULL;
+    if (map_valid(item[itemid][E_ITEM_EXTRA_DATA_MAP])) {
+        map_delete(item[itemid][E_ITEM_EXTRA_DATA_MAP]);
+    }
+    
     item[itemid][E_ITEM_EXTRA_DATA_MAP] = INVALID_MAP;
 
     pool_remove(allItemsCollection, _:itemid);
+
     if (call) {
         CallLocalFunction("OnItemDestroy", "i", _:itemid);
     }
@@ -110,46 +114,16 @@ stock bool:IsValidItem(Item:itemid) {
 
 stock ItemBuild:GetItemBuild(Item:itemid) {
     if (!IsValidItem(itemid)) {
-        return INVALID_ITEM_BUILD;
+        return INVALID_ITEM_BUILD_ID;
     }
-    return ItemBuild:pool_get(allItemsCollection, _:itemid);
-}
-
-stock bool:SetItemExtraName(Item:itemid, const name[]) {
-    if (!IsValidItem(itemid)) {
-        return false;
-    }
-    if (str_valid(item[itemid][E_ITEM_EXTRA_NAME])) {
-        str_delete(item[itemid][E_ITEM_EXTRA_NAME]);
-    }
-    item[itemid][E_ITEM_EXTRA_NAME] = str_acquire(str_new(name));
-    return true;
-}
-
-stock bool:GetItemExtraName(Item:itemid, output[], size = sizeof (output)) {
-    if (!IsValidItem(itemid)) {
-        return false;
-    }
-    str_get(item[itemid][E_ITEM_EXTRA_NAME], output, size);
-    return true;
-}
-
-stock bool:SetItemUUID(Item:itemid, const UUID[]) {
-    if (!IsValidItem(itemid)) {
-        return false;
-    }
-    if (str_valid(item[itemid][E_ITEM_UUID])) {
-        str_delete(item[itemid][E_ITEM_UUID]);
-    }
-    item[itemid][E_ITEM_UUID] = str_acquire(str_new(UUID));
-    return true;
+    return item[itemid][E_ITEM_BUILD_ID];
 }
 
 stock bool:GetItemUUID(Item:itemid, output[], size = sizeof (output)) {
     if (!IsValidItem(itemid)) {
         return false;
     }
-    str_get(item[itemid][E_ITEM_UUID], output, size);
+    pool_get_str(allItemsCollection, _:itemid, output, size);
     return true;
 }
 
@@ -183,7 +157,9 @@ stock bool:SetItemExtraData(Item:itemid, const key[], value) {
     if (!map_has_str_key(item[itemid][E_ITEM_EXTRA_DATA_MAP], key) && map_size(item[itemid][E_ITEM_EXTRA_DATA_MAP]) >= MAX_ITEM_EXTRA_DATA) {
         return false;
     }
+    
     map_str_set(item[itemid][E_ITEM_EXTRA_DATA_MAP], key, value);
+    
     return true;
 }
 
@@ -191,12 +167,15 @@ stock bool:GetItemExtraData(Item:itemid, const key[], &value) {
     if (!HasItemAnyExtraData(itemid)) {
         return false;
     }
-
     return map_str_get_safe(item[itemid][E_ITEM_EXTRA_DATA_MAP], key, value);
 }
 
 stock Pool:GetItemPool() {
     return allItemsCollection;
+}
+
+SetItemAmount(Item:itemid, Variant:var) {
+    
 }
 
 hook OnGameModeInit() {

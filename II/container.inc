@@ -48,7 +48,7 @@ stock Container:CreateContainer(const name[], capacity, bool:call = true) {
     containerItemCollection[index] = pool_new(capacity);
 
     if (call) {
-        CallLocalFunction("OnContainerCreated", "i", _:index);
+        CallLocalFunction("OnContainerCreate", "i", _:index);
     }
 
     return index;
@@ -115,6 +115,7 @@ stock bool:RemoveItemFromContainer(Container:containerid, index, &Item:itemid = 
     itemContainerIndex[itemid] = -1;
 
     pool_remove(containerItemCollection[containerid], index);
+    
     if (call) {
         CallLocalFunction("OnItemRemoveFromContainer", "iiii", _:containerid, _:itemid, index, playerid);
     }
@@ -140,6 +141,7 @@ stock Iter:GetContainerIter(Container:containerid, index = 0) {
     if (!IsValidContainer(containerid)) {
         return INVALID_ITERATOR;
     }
+    
     new const Iter:iter = pool_iter(containerItemCollection[containerid], index);
     iter_acquire(iter);
     return iter;

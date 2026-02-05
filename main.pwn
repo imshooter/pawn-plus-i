@@ -14,7 +14,12 @@ main(){}
 public OnGameModeInit() {
     new const Container:containerid = CreateContainer("Any Container", 100000);
     new count = 0, index = 0, t = 0, Item:searchItem;
-
+    
+    /**
+     * CreateItem
+     *  - Iter_Alloc: ~4417 ms
+     *  - pool_add: ~80 ms
+     */
     new const t3 = GetTickCount();
     for (new i; i != 100000; i++) {
         CreateItem(ItemBuild:(i % 10), .call = false);
